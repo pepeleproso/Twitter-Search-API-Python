@@ -8,11 +8,12 @@ from bs4 import BeautifulSoup
 from time import sleep
 from concurrent.futures import ThreadPoolExecutor
 import logging as log
+import csv
 
 __author__ = 'Tom Dickinson'
 
 
-class TwitterSearch(metaclass=ABCMeta):
+class TwitterSearch(object):
 
     def __init__(self, rate_delay, error_delay=5):
         """
@@ -32,9 +33,15 @@ class TwitterSearch(metaclass=ABCMeta):
                         advanced search: https://twitter.com/search-advanced
         """
         url = self.construct_url(query)
+        print(url)
+        sleep(self.rate_delay)
         continue_search = True
         min_tweet = None
         response = self.execute_search(url)
+        #print('R:')
+        #print(response)
+        #print('items_html')
+        #print(response['items_html'])
         while response is not None and continue_search and response['items_html'] is not None:
             tweets = self.parse_tweets(response['items_html'])
 
@@ -69,8 +76,7 @@ class TwitterSearch(metaclass=ABCMeta):
         try:
             # Specify a user agent to prevent Twitter from returning a profile card
             headers = {
-                'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.'
-                              '86 Safari/537.36'
+                'user-agent': 'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:53.0) Gecko/20100101 Firefox/50.0'
             }
             req = requests.get(url, headers=headers)
             # response = urllib2.urlopen(req)
@@ -120,7 +126,7 @@ class TwitterSearch(metaclass=ABCMeta):
             user_details_div = li.find("div", class_="tweet")
             if user_details_div is not None:
                 tweet['user_id'] = user_details_div['data-user-id']
-                tweet['user_screen_name'] = user_details_div['data-user-id']
+                tweet['user_screen_name'] = user_details_div['data-screen-name']
                 tweet['user_name'] = user_details_div['data-name']
 
             # Tweet date
@@ -197,7 +203,8 @@ class TwitterSearchImpl(TwitterSearch):
                 t = datetime.datetime.fromtimestamp((tweet['created_at']/1000))
                 fmt = "%Y-%m-%d %H:%M:%S"
                 log.info("%i [%s] - %s" % (self.counter, t.strftime(fmt), tweet['text']))
-
+                log.info("pepepepe")
+                log.info(tweet)
             # When we've reached our max limit, return False so collection stops
             if self.max_tweets is not None and self.counter >= self.max_tweets:
                 return False
@@ -228,6 +235,11 @@ class TwitterSlicer(TwitterSearch):
             day_query = "%s since:%s until:%s" % (query, since_query.strftime("%Y-%m-%d"),
                                                   until_query.strftime("%Y-%m-%d"))
             tp.submit(self.perform_search, day_query)
+#        since_query = self.since
+#        until_query = self.until
+#        day_query = "%s since:%s until:%s" % (query, since_query.strftime("%Y-%m-%d"),
+#                                                  until_query.strftime("%Y-%m-%d"))
+#        tp.submit(self.perform_search, day_query)
         tp.shutdown(wait=True)
 
     def save_tweets(self, tweets):
@@ -238,33 +250,54 @@ class TwitterSlicer(TwitterSearch):
         for tweet in tweets:
             # Lets add a counter so we only collect a max number of tweets
             self.counter += 1
+            print('tweet')
+            print(tweet)
             if tweet['created_at'] is not None:
                 t = datetime.datetime.fromtimestamp((tweet['created_at']/1000))
                 fmt = "%Y-%m-%d %H:%M:%S"
                 log.info("%i [%s] - %s" % (self.counter, t.strftime(fmt), tweet['text']))
-
+                log.info("pepe")
+                log.info(tweet)
+                filename = self.getfilename()
+                with open(filename,'a') as csvfile:
+                    csvWriter = csv.writer(csvfile,quoting=csv.QUOTE_MINIMAL)
+                    line = []
+                    line.append(str(tweet['tweet_id']))
+                    line.append(str(tweet['text']))
+                    line.append(str(tweet['user_id']))
+                    line.append(str(tweet['user_screen_name']))
+                    line.append(str(tweet['user_name']))
+                    line.append(datetime.datetime.fromtimestamp(float(tweet['created_at'])/1000).strftime('%Y-%m-%d %H:%M:%S'))
+                    line.append(str(tweet['retweets']))
+                    line.append(str(tweet['favorites']))
+                    print(line)
+                    csvWriter.writerow(line)
         return True
 
+    def getfilename(self):
+        filename = 'inseguridadRosarioAgosto' + '.csv'
+        log.debug('FileName: ' + str(filename))
+        return filename
 
 if __name__ == '__main__':
     log.basicConfig(level=log.INFO)
 
-    search_query = "Babylon 5"
+    search_query = "#rosarioInseguridad"
     rate_delay_seconds = 0
     error_delay_seconds = 5
 
     # Example of using TwitterSearch
-    twit = TwitterSearchImpl(rate_delay_seconds, error_delay_seconds, None)
-    twit.search(search_query)
+    #twit = TwitterSearchImpl(rate_delay_seconds, error_delay_seconds, None)
+    #twit.search(search_query)
 
     # Example of using TwitterSlice
-    select_tweets_since = datetime.datetime.strptime("2016-10-01", '%Y-%m-%d')
-    select_tweets_until = datetime.datetime.strptime("2016-12-01", '%Y-%m-%d')
-    threads = 10
+    select_tweets_since = datetime.datetime.strptime("2016-08-01", '%Y-%m-%d')
+    select_tweets_until = datetime.datetime.strptime("2016-11-30", '%Y-%m-%d')
+    threads = 1
 
     twitSlice = TwitterSlicer(rate_delay_seconds, error_delay_seconds, select_tweets_since, select_tweets_until,
                               threads)
     twitSlice.search(search_query)
 
-    print("TwitterSearch collected %i" % twit.counter)
+    #print("TwitterSearch collected %i" % twit.counter)
     print("TwitterSlicer collected %i" % twitSlice.counter)
